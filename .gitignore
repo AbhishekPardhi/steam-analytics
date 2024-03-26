@@ -1,1 +1,4 @@
-data/games.csv
+data/*
+data
+venv/*
+venv
