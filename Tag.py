@@ -25,6 +25,13 @@ def extract_max(d):
 df['Total revenue'] = df['Price'] * df['Estimated owners'].apply(extract_max)
 df['Platform count'] = df['Windows'].astype(int) + df['Mac'].astype(int) + df['Linux'].astype(int)
 
+# Total votes = positive votes + negative votes
+df['Total votes'] = df['Positive'] + df['Negative'] # A measure of how much popularity a game gained
+
+df['Release Month'] = df['Release date'].astype(str)
+df['Release Month'] = df['Release date'].str.split(' ').str[0]
+df['Release Month'] = pd.to_datetime(df['Release Month'], format='%b', errors='coerce').dt.month
+
 
 # Create Dash app
 app = dash.Dash(__name__)
@@ -39,7 +46,8 @@ app.layout = html.Div([
     ),
     dcc.Graph(id='tag-bar-chart'),
     dcc.Graph(id='engagement-correlation'),
-    dcc.Graph(id='sales-correlation')
+    dcc.Graph(id='sales-correlation'),
+    dcc.Graph(id='seasonal-trends')
 ])
 
 # Define callback to update tag bar chart based on selected genre
@@ -63,7 +71,6 @@ def update_tag_bar_chart(selected_genre):
 
     return fig
 
-# Explore the correlation between player engagement metrics (such as playtime, and number of sessions) and game genres to understand which genres attract more dedicated players.
 
 @app.callback(
     Output('engagement-correlation', 'figure'),
@@ -109,6 +116,23 @@ def update_sales_correlation(selected_genre):
     fig.add_trace(px.pie(time_spent, values='Average playtime forever', names='Platform count').data[0], row=1, col=2)
     fig.update_layout(title_text=f"Correlation based on availability across Windows, Mac and Linux for genre: {selected_genre}")
 
+    return fig
+
+
+@app.callback(
+    Output('seasonal-trends', 'figure'),
+    [Input('genre-dropdown', 'value')]
+)
+def update_seasonal_trends(selected_genre):
+    ddf = df.explode('Genres')
+    ddf = ddf[ddf['Genres'] == selected_genre]
+
+    # release month vs total votes that month for the selected genre
+    monthly_votes = ddf.groupby('Release Month')['Total votes'].sum().reset_index()
+
+    fig = px.line(monthly_votes, x='Release Month', y='Total votes', title=f"Seasonal Trends for Genre: {selected_genre}")
+    
+    fig.update_xaxes(tickvals=monthly_votes['Release Month'], ticktext=pd.to_datetime(monthly_votes['Release Month'], format='%m').dt.strftime('%b'))
     return fig
 
 # Run the app
