@@ -3,9 +3,12 @@ from dash import dcc, html
 from dash.dependencies import Input, Output
 import plotly.express as px
 import pandas as pd
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
 
 def read_data(file_path):
     df = pd.read_csv(file_path)
+    df = df.dropna(subset=['Genres'])
     df_original = df.copy()
 
     # Preprocess the data: Calculate average value for 'Estimated owners' range
@@ -26,9 +29,9 @@ app = dash.Dash(__name__)
 
 @app.callback(
     Output('demand-histogram', 'figure'),
-    [Input('genre-dropdown', 'value')]
+    [Input('genre-dropdown-1', 'value')]
 )
-def price_sensitivity_visualization(genre):
+def price_sensitivity_visualization_1(genre):
     genre_data = df[df['Genres'] == genre]
     fig = px.histogram(genre_data, x='Price', y='Average Owners', nbins=30, 
                        title=f'Average Owners Distribution for {genre}', 
@@ -125,7 +128,7 @@ def genre_correlation_visualization(df):
 
 @app.callback(
     Output('tag-bar-chart', 'figure'),
-    [Input('genre-dropdown', 'value')]
+    [Input('genre-dropdown-2', 'value')]
 )
 def tag_visualization(selected_genre):
     df = df_original.copy()
@@ -152,17 +155,50 @@ def tag_visualization(selected_genre):
 
     return fig
 
+def price_sensitivity_visualization_2(df):
+    cf = df[(df['Average playtime forever'] < 25000) & (df['Price'] < 100) & (df['Peak CCU'] < 32000)]
+
+    fig = px.scatter(cf, x='Average playtime forever', y='Peak CCU', color='Price', color_continuous_scale='inferno',
+                    size_max=40, hover_name=cf.index, title='Scatter Plot for all Games')
+
+    fig.update_layout(coloraxis_colorbar=dict(title='Price'))
+    
+    return fig
+
+@app.callback(
+    Output('wordcloud-graph', 'figure'),
+    [Input('genre-dropdown-3', 'value')]
+)
+def wordcloud_visualization(genre):
+    # df = pd.read_csv('data/games.csv')
+    # df = df.dropna(subset=['Genres'])
+    # Filter the dataframe for the selected genre
+    genre_df = df_original[df_original['Genres'].str.contains(genre, na=False)]
+    
+    # Concatenate the descriptions
+    text = ' '.join(genre_df['About the game'].dropna())
+    
+    # Create a word cloud figure using Plotly Express
+    wordcloud = WordCloud(background_color="black", colormap="viridis", prefer_horizontal=0.9, max_font_size=40).generate_from_text(text)
+    wordcloud_fig = px.imshow(wordcloud, title=f'Word Cloud for {genre}')
+    wordcloud_fig.update_xaxes(showline=False, visible=False, ticks='')
+    wordcloud_fig.update_yaxes(showline=False, visible=False, ticks='')
+    wordcloud_fig.update_layout(coloraxis_showscale=False)
+    
+    return wordcloud_fig
+
 timeline_fig = timeline_visualization(df_original)
 peak_ccu_fig = peak_ccu_visualisation(df)
 # genre_correlation_fig = genre_correlation_visualization(df_original)
 genre_correlation_fig = peak_ccu_visualisation(df)
+price_sensitivity_fig = price_sensitivity_visualization_2(df)
 
 app.layout = html.Div([
     html.Div([
         html.Div([
-            html.H2('Price Sensitivity Visualization'),
+            html.H2('Price Sensitivity Visualization 1'),
             dcc.Dropdown(
-                id='genre-dropdown',
+                id='genre-dropdown-1',
                 options=[{'label': genre, 'value': genre} for genre in genre_list],
                 value=genre_list[0],
                 clearable=False
@@ -170,10 +206,10 @@ app.layout = html.Div([
             dcc.Graph(id='demand-histogram')
         ], className='six columns'),
         html.Div([
-            html.H2('Timeline Visualization'),
+            html.H2('Price Sensitivity Visualization 2'),
             dcc.Graph(
-                id='graph2',
-                figure=timeline_fig
+                id='graph5',
+                figure=price_sensitivity_fig
             ),
         ], className='six columns')
     ], className='row'),
@@ -197,7 +233,7 @@ app.layout = html.Div([
         html.Div([
             html.H2('Tags Visualization'),
             dcc.Dropdown(
-                id='genre-dropdown',
+                id='genre-dropdown-2',
                 options=[{'label': genre, 'value': genre} for genre in genre_list],
                 value=genre_list[0],
                 multi=False
@@ -205,11 +241,24 @@ app.layout = html.Div([
             dcc.Graph(id='tag-bar-chart')
         ], className='six columns'),
         html.Div([
-            html.H2('Genre Correlation Visualization'),
+            html.H2('Timeline Visualization'),
             dcc.Graph(
-                id='graph4',
-                figure=genre_correlation_fig
+                id='graph2',
+                figure=timeline_fig
             ),
+        ], className='six columns')
+    ], className='row'),
+    html.Div([
+        html.Div([
+            html.H2("Word Cloud Generator for Game Descriptions by Genre"),
+            dcc.Dropdown(
+                id='genre-dropdown-3',
+                options=[{'label': genre, 'value': genre} for genre in df_original['Genres'].unique()],
+                value=df['Genres'].unique()[0],
+                clearable=False,
+                style={'width': '50%'}
+            ),
+            dcc.Graph(id='wordcloud-graph')
         ], className='six columns')
     ], className='row'),
 ])
