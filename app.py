@@ -16,6 +16,10 @@ def read_data(file_path):
     df[['Min Owners', 'Max Owners']] = df['Estimated owners'].str.split('-', expand=True).astype(float)
     df['Average Owners'] = (df['Min Owners'] + df['Max Owners']) / 2
 
+    # Convert Positive & Negative Reviews to %
+    df['% Positive Reviews'] = 100 * df['Positive']/(df['Positive'] + df['Negative'])
+    df['% Negative Reviews'] = 100 - df['% Positive Reviews']
+
     # Duplicate rows for each genre
     genre_list = df['Genres'].str.split(',', expand=True).stack().unique()
     df['Genres'] = df['Genres'].str.split(',')
@@ -187,6 +191,31 @@ def wordcloud_visualization(genre):
     
     return wordcloud_fig
 
+@app.callback(
+    Output('review-playtime-plot', 'figure'),
+    [Input('genre-dropdown-4', 'value'),
+     Input('review-type', 'value')]
+)
+
+def game_review_visualization(selected_genre, review_type):
+    # Threshold to filter relevant games
+    df_copy = df[(df['Positive'] + df['Negative'] >= 5000) & (df['Average playtime forever']>=500)]
+
+    filtered_df = df_copy[df_copy['Genres'] == selected_genre]
+    
+    # Determine x-axis and title based on review type selection
+    y_column = review_type
+    # Create scatter plot
+    fig = px.scatter(filtered_df, x='Average playtime forever', y=y_column,
+                     hover_name='Name', size_max=60,
+                     labels={y_column: f"{review_type}", "Average playtime forever": "Average Playtime (Forever)"})
+    
+    fig.update_layout(title=f"{review_type} vs Average Playtime for {selected_genre} Games",
+                      yaxis_title=f"{review_type}",
+                      xaxis_title="Average Playtime (Forever)")
+
+    return fig
+
 timeline_fig = timeline_visualization(df_original)
 peak_ccu_fig = peak_ccu_visualisation(df)
 # genre_correlation_fig = genre_correlation_visualization(df_original)
@@ -259,6 +288,27 @@ app.layout = html.Div([
                 style={'width': '50%'}
             ),
             dcc.Graph(id='wordcloud-graph')
+        ], className='six columns'),
+        html.Div([
+            html.H2("Game Review vs Playtime Analysis by Genre"),
+            dcc.Dropdown(
+                id='genre-dropdown-4',
+                options=[{'label': genre, 'value': genre} for genre in genre_list],
+                value=genre_list[0],  
+                multi=False,
+                style={'width': '50%'}
+            ),
+            dcc.RadioItems(
+                id='review-type',
+                options=[
+                    {'label': '% Negative Reviews', 'value': '% Negative Reviews'},
+                    {'label': '% Positive Reviews', 'value': '% Positive Reviews'}
+                ],
+                value='% Negative Reviews',
+                inline=True,
+                style={'width': '50%'}
+            ),
+            dcc.Graph(id='review-playtime-plot')
         ], className='six columns')
     ], className='row'),
 ])
