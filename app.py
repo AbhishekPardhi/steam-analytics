@@ -138,24 +138,40 @@ def tag_visualization(selected_genre):
     df = df_original.copy()
     df['Genres'] = df['Genres'].fillna('')
 
-    # Apply lambda function
+    # Apply lambda function to split Genres column
     df['Genres'] = df['Genres'].apply(lambda x: x.split(',') if isinstance(x, str) else [])
 
     # Clean Tags column
     df['Tags'] = df['Tags'].str.replace(';', ',')
     df['Tags'] = df['Tags'].str.split(',')
+
     # Filter dataframe based on selected genre
     genre_df = df[df['Genres'].apply(lambda x: selected_genre in x)]
 
-    # Flatten list of tags associated with games in the selected genre
-    tags_list = [tag for sublist in genre_df['Tags'].tolist() if isinstance(sublist, list) for tag in sublist]
+    # Create an empty dictionary to store tag sums
+    tag_peak_ccu_sum = {}
 
-    # Calculate tag frequencies
-    tag_counts = pd.Series(tags_list).value_counts()
+    # Iterate over each row in the dataframe
+    for idx, row in genre_df.iterrows():
+        tags = row['Tags']
+        peak_ccu = row['Peak CCU']
+        
+        if isinstance(tags, list):  # Check if tags is a list
+            for tag in tags:
+                if tag not in tag_peak_ccu_sum:
+                    tag_peak_ccu_sum[tag] = 0
+                tag_peak_ccu_sum[tag] += peak_ccu
+    
+    # Create DataFrame from dictionary
+    tag_peak_ccu_sum_df = pd.DataFrame(list(tag_peak_ccu_sum.items()), columns=['Tag', 'Total Peak CCU'])
+
+    # Sort DataFrame by Total Peak CCU in descending order
+    tag_peak_ccu_sum_df = tag_peak_ccu_sum_df.sort_values(by='Total Peak CCU', ascending=False)
 
     # Create bar chart
-    fig = px.bar(tag_counts.head(10), x=tag_counts.head(10).index, y=tag_counts.head(10).values,
-                 labels={'x': 'Tag', 'y': 'Frequency'}, title=f"Top 10 Tags for Genre: {selected_genre}")
+    fig = px.bar(tag_peak_ccu_sum_df.head(10), x='Tag', y='Total Peak CCU',
+                 labels={'x': 'Tag', 'y': 'Total Peak CCU'}, 
+                 title=f"Total Peak CCU by Tag for Genre: {selected_genre}")
 
     return fig
 
