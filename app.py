@@ -2,9 +2,11 @@ import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
 import plotly.express as px
+import plotly.graph_objects as go
 import pandas as pd
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
+import random
 
 def read_data(file_path):
     df = pd.read_csv(file_path)
@@ -20,6 +22,13 @@ def read_data(file_path):
     df['% Positive Reviews'] = 100 * df['Positive']/(df['Positive'] + df['Negative'])
     df['% Negative Reviews'] = 100 - df['% Positive Reviews']
 
+    # Release date preprocess
+    df['Release date'] = pd.to_datetime(df['Release date'], errors='coerce')
+    # Handling the case where some dates are in "Month Year" format
+    # Assuming the release date to be the first day of the month
+    df['Release date'] = df['Release date'].fillna(pd.to_datetime(df['Release date'], errors='coerce', format='%b %Y'))
+    df['Month_Year'] = df['Release date'].dt.to_period('M').astype(str)
+
     # Duplicate rows for each genre
     genre_list = df['Genres'].str.split(',', expand=True).stack().unique()
     df['Genres'] = df['Genres'].str.split(',')
@@ -28,6 +37,9 @@ def read_data(file_path):
     return df, df_original, genre_list
 
 df, df_original, genre_list = read_data('data/games.csv')
+df_tech = pd.read_csv('data/tech_adv.csv')
+df_tech['Year'] = pd.to_datetime(df_tech['Year'], format='%Y')
+merged_df = pd.merge(df, df_tech, left_on='Release date', right_on='Year', how='left')
 
 app = dash.Dash(__name__)
 
@@ -44,14 +56,6 @@ def price_sensitivity_visualization_1(genre):
     return fig
 
 def timeline_visualization(df):
-    df['Release date'] = pd.to_datetime(df['Release date'], errors='coerce')
-
-    # Handling the case where some dates are in "Month Year" format
-    # Assuming the release date to be the first day of the month
-    df['Release date'] = df['Release date'].fillna(pd.to_datetime(df['Release date'], errors='coerce', format='%b %Y'))
-
-    df['Month_Year'] = df['Release date'].dt.to_period('M').astype(str)
-
     # Group by month and year and count the number of games released each month
     monthly_counts = df.groupby('Month_Year').size().reset_index(name='Count')
 
@@ -65,6 +69,42 @@ def timeline_visualization(df):
 
     fig.update_xaxes(title_text='Release Month', range=[monthly_counts['Month_Year'].min(), monthly_counts['Month_Year'].max()])
 
+    fig.update_yaxes(title_text='Number of Games Released')
+    
+    return fig
+
+@app.callback(
+    Output('game-timeline', 'figure'),
+    [Input('genre-dropdown-3', 'value')]
+)
+
+def tech_adv_timeline(selected_genre):
+    # Define color map for technological advancements
+    adv_colors = {}
+
+    # Generate random color for each technological advancement
+    for advancement in df_tech['Advancement'].unique():
+        adv_colors[advancement] = "#{:06x}".format(random.randint(0, 0xFFFFFF))
+
+    filtered_df = merged_df[merged_df['Genres'] == selected_genre]
+
+    # Group by month and year and count the number of games released each month
+    monthly_counts = filtered_df.groupby('Month_Year').size().reset_index(name='Count')
+
+    fig = px.line(monthly_counts, x='Month_Year', y='Count', 
+                  labels={'Count': 'Number of Games Released', 'Month_Year': 'Release Month'},
+                  title=f'Number of {selected_genre} Games Released Each Month')
+    
+    # Add colored segments for technological advancements
+    for index, row in df_tech.iterrows():
+        year = row['Year']
+        advancement = row['Advancement']
+        color = adv_colors.get(advancement, 'rgb(0, 0, 0)')  # Default color is black if not found in the map
+        fig.add_trace(go.Scatter(x=[year, year], y=[0, monthly_counts['Count'].max()], mode='lines', line=dict(color=color), name=advancement))
+
+    # Set x-axis range
+    fig.update_xaxes(title_text='Release Month', range=[monthly_counts['Month_Year'].min(), monthly_counts['Month_Year'].max()])
+    
     fig.update_yaxes(title_text='Number of Games Released')
     
     return fig
@@ -187,7 +227,7 @@ def price_sensitivity_visualization_2(df):
 
 @app.callback(
     Output('wordcloud-graph', 'figure'),
-    [Input('genre-dropdown-3', 'value')]
+    [Input('genre-dropdown-4', 'value')]
 )
 def wordcloud_visualization(genre):
     # df = pd.read_csv('data/games.csv')
@@ -209,7 +249,7 @@ def wordcloud_visualization(genre):
 
 @app.callback(
     Output('review-playtime-plot', 'figure'),
-    [Input('genre-dropdown-4', 'value'),
+    [Input('genre-dropdown-5', 'value'),
      Input('review-type', 'value')]
 )
 
@@ -232,10 +272,10 @@ def game_review_visualization(selected_genre, review_type):
 
     return fig
 
-timeline_fig = timeline_visualization(df_original)
+timeline_fig = timeline_visualization(df)
 peak_ccu_fig = peak_ccu_visualisation(df)
-# genre_correlation_fig = genre_correlation_visualization(df_original)
-genre_correlation_fig = peak_ccu_visualisation(df)
+genre_correlation_fig = genre_correlation_visualization(df_original)
+# genre_correlation_fig = peak_ccu_visualisation(df)
 price_sensitivity_fig = price_sensitivity_visualization_2(df)
 
 app.layout = html.Div([
@@ -295,11 +335,23 @@ app.layout = html.Div([
     ], className='row'),
     html.Div([
         html.Div([
-            html.H2("Word Cloud Generator for Game Descriptions by Genre"),
+            html.H2('Tech Advancements and Release Timeline Visualization by Genre'),
             dcc.Dropdown(
                 id='genre-dropdown-3',
+                options=[{'label': genre, 'value': genre} for genre in genre_list],
+                value=genre_list[0], 
+                multi=False,
+            ),
+            dcc.Graph(id='game-timeline')
+        ], className='twelve columns')
+    ], className='row'),
+    html.Div([
+        html.Div([
+            html.H2("Word Cloud Generator for Game Descriptions by Genre"),
+            dcc.Dropdown(
+                id='genre-dropdown-4',
                 options=[{'label': genre, 'value': genre} for genre in df_original['Genres'].unique()],
-                value=df['Genres'].unique()[0],
+                value=df_original['Genres'].unique()[0],
                 clearable=False,
                 style={'width': '50%'}
             ),
@@ -308,7 +360,7 @@ app.layout = html.Div([
         html.Div([
             html.H2("Game Review vs Playtime Analysis by Genre"),
             dcc.Dropdown(
-                id='genre-dropdown-4',
+                id='genre-dropdown-5',
                 options=[{'label': genre, 'value': genre} for genre in genre_list],
                 value=genre_list[0],  
                 multi=False,
