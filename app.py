@@ -5,6 +5,7 @@ import plotly.express as px
 import pandas as pd
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
+from plotly.subplots import make_subplots
 
 def read_data(file_path):
     df = pd.read_csv(file_path)
@@ -15,6 +16,10 @@ def read_data(file_path):
     df['Estimated owners'] = df['Estimated owners'].str.replace('[^\d-]+', '', regex=True)
     df[['Min Owners', 'Max Owners']] = df['Estimated owners'].str.split('-', expand=True).astype(float)
     df['Average Owners'] = (df['Min Owners'] + df['Max Owners']) / 2
+    
+    # Convert Positive & Negative Reviews to %
+    df['% Positive Reviews'] = 100 * df['Positive']/(df['Positive'] + df['Negative'])
+    df['% Negative Reviews'] = 100 - df['% Positive Reviews']
 
     # Duplicate rows for each genre
     genre_list = df['Genres'].str.split(',', expand=True).stack().unique()
@@ -134,24 +139,40 @@ def tag_visualization(selected_genre):
     df = df_original.copy()
     df['Genres'] = df['Genres'].fillna('')
 
-    # Apply lambda function
+    # Apply lambda function to split Genres column
     df['Genres'] = df['Genres'].apply(lambda x: x.split(',') if isinstance(x, str) else [])
 
     # Clean Tags column
     df['Tags'] = df['Tags'].str.replace(';', ',')
     df['Tags'] = df['Tags'].str.split(',')
+
     # Filter dataframe based on selected genre
     genre_df = df[df['Genres'].apply(lambda x: selected_genre in x)]
 
-    # Flatten list of tags associated with games in the selected genre
-    tags_list = [tag for sublist in genre_df['Tags'].tolist() if isinstance(sublist, list) for tag in sublist]
+    # Create an empty dictionary to store tag sums
+    tag_peak_ccu_sum = {}
 
-    # Calculate tag frequencies
-    tag_counts = pd.Series(tags_list).value_counts()
+    # Iterate over each row in the dataframe
+    for idx, row in genre_df.iterrows():
+        tags = row['Tags']
+        peak_ccu = row['Peak CCU']
+        
+        if isinstance(tags, list):  # Check if tags is a list
+            for tag in tags:
+                if tag not in tag_peak_ccu_sum:
+                    tag_peak_ccu_sum[tag] = 0
+                tag_peak_ccu_sum[tag] += peak_ccu
+    
+    # Create DataFrame from dictionary
+    tag_peak_ccu_sum_df = pd.DataFrame(list(tag_peak_ccu_sum.items()), columns=['Tag', 'Total Peak CCU'])
+
+    # Sort DataFrame by Total Peak CCU in descending order
+    tag_peak_ccu_sum_df = tag_peak_ccu_sum_df.sort_values(by='Total Peak CCU', ascending=False)
 
     # Create bar chart
-    fig = px.bar(tag_counts.head(10), x=tag_counts.head(10).index, y=tag_counts.head(10).values,
-                 labels={'x': 'Tag', 'y': 'Frequency'}, title=f"Top 10 Tags for Genre: {selected_genre}")
+    fig = px.bar(tag_peak_ccu_sum_df.head(10), x='Tag', y='Total Peak CCU',
+                 labels={'x': 'Tag', 'y': 'Total Peak CCU'}, 
+                 title=f"Total Peak CCU by Tag for Genre: {selected_genre}")
 
     return fig
 
@@ -164,6 +185,9 @@ def price_sensitivity_visualization_2(df):
     fig.update_layout(coloraxis_colorbar=dict(title='Price'))
     
     return fig
+
+def extract_max(d):
+    return int(d.split('-')[1])
 
 @app.callback(
     Output('wordcloud-graph', 'figure'),
@@ -187,10 +211,123 @@ def wordcloud_visualization(genre):
     
     return wordcloud_fig
 
+@app.callback(
+    Output('review-playtime-plot', 'figure'),
+    [Input('genre-dropdown-7', 'value'),
+     Input('review-type', 'value')]
+)
+def game_review_visualization(selected_genre, review_type):
+    # Threshold to filter relevant games
+    df_copy = df[(df['Positive'] + df['Negative'] >= 5000) & (df['Average playtime forever']>=500)]
+
+    filtered_df = df_copy[df_copy['Genres'] == selected_genre]
+    
+    # Determine x-axis and title based on review type selection
+    y_column = review_type
+    # Create scatter plot
+    fig = px.scatter(filtered_df, x='Average playtime forever', y=y_column,
+                     hover_name='Name', size_max=60,
+                     labels={y_column: f"{review_type}", "Average playtime forever": "Average Playtime (Forever)"})
+    
+    fig.update_layout(title=f"{review_type} vs Average Playtime for {selected_genre} Games",
+                      yaxis_title=f"{review_type}",
+                      xaxis_title="Average Playtime (Forever)")
+
+    return fig
+
+def transformDF():
+    df = pd.read_csv("data/games.csv") 
+    df['Genres'] = df['Genres'].fillna('')
+
+    # Apply lambda function
+    df['Genres'] = df['Genres'].apply(lambda x: x.split(',') if isinstance(x, str) else [])
+
+    # Clean Tags column
+    df['Tags'] = df['Tags'].str.replace(';', ',')
+    df['Tags'] = df['Tags'].str.split(',')
+    
+    df['Total revenue'] = df['Price'] * df['Estimated owners'].apply(extract_max)
+    df['Platform count'] = df['Windows'].astype(int) + df['Mac'].astype(int) + df['Linux'].astype(int)
+
+    # Total votes = positive votes + negative votes
+    df['Total votes'] = df['Positive'] + df['Negative'] # A measure of how much popularity a game gained
+
+    df['Release Month'] = df['Release date'].astype(str)
+    df['Release Month'] = df['Release date'].str.split(' ').str[0]
+    df['Release Month'] = pd.to_datetime(df['Release Month'], format='%b', errors='coerce').dt.month
+    
+    return df
+
+new_df = transformDF()
+
+@app.callback(
+    Output('engagement-correlation', 'figure'),
+    [Input('genre-dropdown-4', 'value')]
+)
+def update_engagement_correlation(selected_genre):
+    df = new_df
+    ddf = df.explode('Genres')
+    genre_engagement = ddf.groupby('Genres')['Average playtime forever'].mean().reset_index()
+    
+    # Create scatter plot
+    fig = px.scatter(genre_engagement, x='Genres', y='Average playtime forever', title=f"Engagement Correlation for Genre: {selected_genre}")
+   
+    # mark selected genre differently
+    fig.add_trace(px.scatter(genre_engagement[genre_engagement['Genres'] == selected_genre], x='Genres', y='Average playtime forever').data[0])
+    fig.update_traces(marker=dict(size=12, line=dict(width=2, color='DarkSlateGrey')),
+                  selector=dict(mode='markers'))
+    return fig
+
+@app.callback(
+    Output('sales-correlation', 'figure'),
+    [Input('genre-dropdown-5', 'value')]
+
+)
+def update_sales_correlation(selected_genre):
+    df = new_df
+    # do it for a single genre
+    ddf = df.explode('Genres')
+    ddf = ddf[ddf['Genres'] == selected_genre]
+
+    # sum of total revenue for each platform count
+    platform_revenue = ddf.groupby('Platform count')['Total revenue'].sum().reset_index()
+
+    # average playtime for each platform count
+    time_spent = ddf.groupby('Platform count')['Average playtime forever'].mean().reset_index()
+
+    # subplots
+    fig = make_subplots(rows=1, cols=2, subplot_titles=("Sales Correlation", "Engagement Correlation"), specs=[[{"type": "pie"}, {"type": "pie"}]])
+
+    # Sales Correlation
+    fig.add_trace(px.pie(platform_revenue, values='Total revenue', names='Platform count').data[0], row=1, col=1)
+
+    # Engagement Correlation
+    fig.add_trace(px.pie(time_spent, values='Average playtime forever', names='Platform count').data[0], row=1, col=2)
+    fig.update_layout(title_text=f"Correlation based on availability across Windows, Mac and Linux for genre: {selected_genre}")
+
+    return fig
+
+@app.callback(
+    Output('seasonal-trends', 'figure'),
+    [Input('genre-dropdown-6', 'value')]
+)
+def update_seasonal_trends(selected_genre):
+    df = new_df
+    ddf = df.explode('Genres')
+    ddf = ddf[ddf['Genres'] == selected_genre]
+
+    # release month vs total votes that month for the selected genre
+    monthly_votes = ddf.groupby('Release Month')['Total votes'].sum().reset_index()
+
+    fig = px.line(monthly_votes, x='Release Month', y='Total votes', title=f"Seasonal Trends for Genre: {selected_genre}")
+    
+    fig.update_xaxes(tickvals=monthly_votes['Release Month'], ticktext=pd.to_datetime(monthly_votes['Release Month'], format='%m').dt.strftime('%b'))
+    return fig
+
 timeline_fig = timeline_visualization(df_original)
 peak_ccu_fig = peak_ccu_visualisation(df)
-# genre_correlation_fig = genre_correlation_visualization(df_original)
-genre_correlation_fig = peak_ccu_visualisation(df)
+genre_correlation_fig = genre_correlation_visualization(df_original)
+# genre_correlation_fig = peak_ccu_visualisation(df)
 price_sensitivity_fig = price_sensitivity_visualization_2(df)
 
 app.layout = html.Div([
@@ -253,13 +390,70 @@ app.layout = html.Div([
             html.H2("Word Cloud Generator for Game Descriptions by Genre"),
             dcc.Dropdown(
                 id='genre-dropdown-3',
-                options=[{'label': genre, 'value': genre} for genre in df_original['Genres'].unique()],
-                value=df['Genres'].unique()[0],
+                options=[{'label': genre, 'value': genre} for genre in genre_list],
+                value=genre_list[0],  
                 clearable=False,
                 style={'width': '50%'}
             ),
             dcc.Graph(id='wordcloud-graph')
+        ], className='six columns'),
+        html.Div([
+            html.H2("Game Review vs Playtime Analysis by Genre"),
+            dcc.Dropdown(
+                id='genre-dropdown-7',
+                options=[{'label': genre, 'value': genre} for genre in genre_list],
+                value=genre_list[0],  
+                multi=False,
+                style={'width': '50%'}
+            ),
+            dcc.RadioItems(
+                id='review-type',
+                options=[
+                    {'label': '% Negative Reviews', 'value': '% Negative Reviews'},
+                    {'label': '% Positive Reviews', 'value': '% Positive Reviews'}
+                ],
+                value='% Negative Reviews',
+                inline=True,
+                style={'width': '50%'}
+            ),
+            dcc.Graph(id='review-playtime-plot')
         ], className='six columns')
+    ], className='row'),
+    html.Div([
+        html.Div([
+            html.H2("Engagement-Correlation by Genre"),
+            dcc.Dropdown(
+                id='genre-dropdown-4',
+                options=[{'label': genre, 'value': genre} for genre in genre_list],
+                value=genre_list[0],
+                clearable=False,
+                style={'width': '50%'}
+            ),
+            dcc.Graph(id='engagement-correlation')
+        ], className='six columns'),
+        html.Div([
+            html.H2("Seasonal Trends by Genre"),
+            dcc.Dropdown(
+                id='genre-dropdown-6',
+                options=[{'label': genre, 'value': genre} for genre in genre_list],
+                value=genre_list[0],
+                clearable=False,
+                style={'width': '50%'}
+            ),
+            dcc.Graph(id='seasonal-trends')
+        ], className='six columns')
+    ], className='row'),
+    html.Div([
+        html.Div([
+            html.H2("Correlation based on Availablity across various platforms"),
+            dcc.Dropdown(
+                id='genre-dropdown-5',
+                options=[{'label': genre, 'value': genre} for genre in genre_list],
+                value=genre_list[0],
+                clearable=False,
+            ),
+            dcc.Graph(id='sales-correlation')
+        ], className='twelve columns')
     ], className='row'),
 ])
 
