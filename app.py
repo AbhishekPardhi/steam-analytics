@@ -16,17 +16,6 @@ def read_data(file_path):
     df['Estimated owners'] = df['Estimated owners'].str.replace('[^\d-]+', '', regex=True)
     df[['Min Owners', 'Max Owners']] = df['Estimated owners'].str.split('-', expand=True).astype(float)
     df['Average Owners'] = (df['Min Owners'] + df['Max Owners']) / 2
-
-    # Convert Positive & Negative Reviews to %
-    df['% Positive Reviews'] = 100 * df['Positive']/(df['Positive'] + df['Negative'])
-    df['% Negative Reviews'] = 100 - df['% Positive Reviews']
-
-    # Release date preprocess
-    df['Release date'] = pd.to_datetime(df['Release date'], errors='coerce')
-    # Handling the case where some dates are in "Month Year" format
-    # Assuming the release date to be the first day of the month
-    df['Release date'] = df['Release date'].fillna(pd.to_datetime(df['Release date'], errors='coerce', format='%b %Y'))
-    df['Month_Year'] = df['Release date'].dt.to_period('M').astype(str)
     
     # Convert Positive & Negative Reviews to %
     df['% Positive Reviews'] = 100 * df['Positive']/(df['Positive'] + df['Negative'])
@@ -151,13 +140,11 @@ def tag_visualization(selected_genre):
     df['Genres'] = df['Genres'].fillna('')
 
     # Apply lambda function to split Genres column
-    # Apply lambda function to split Genres column
     df['Genres'] = df['Genres'].apply(lambda x: x.split(',') if isinstance(x, str) else [])
 
     # Clean Tags column
     df['Tags'] = df['Tags'].str.replace(';', ',')
     df['Tags'] = df['Tags'].str.split(',')
-
 
     # Filter dataframe based on selected genre
     genre_df = df[df['Genres'].apply(lambda x: selected_genre in x)]
@@ -181,30 +168,8 @@ def tag_visualization(selected_genre):
 
     # Sort DataFrame by Total Peak CCU in descending order
     tag_peak_ccu_sum_df = tag_peak_ccu_sum_df.sort_values(by='Total Peak CCU', ascending=False)
-    # Create an empty dictionary to store tag sums
-    tag_peak_ccu_sum = {}
-
-    # Iterate over each row in the dataframe
-    for idx, row in genre_df.iterrows():
-        tags = row['Tags']
-        peak_ccu = row['Peak CCU']
-        
-        if isinstance(tags, list):  # Check if tags is a list
-            for tag in tags:
-                if tag not in tag_peak_ccu_sum:
-                    tag_peak_ccu_sum[tag] = 0
-                tag_peak_ccu_sum[tag] += peak_ccu
-    
-    # Create DataFrame from dictionary
-    tag_peak_ccu_sum_df = pd.DataFrame(list(tag_peak_ccu_sum.items()), columns=['Tag', 'Total Peak CCU'])
-
-    # Sort DataFrame by Total Peak CCU in descending order
-    tag_peak_ccu_sum_df = tag_peak_ccu_sum_df.sort_values(by='Total Peak CCU', ascending=False)
 
     # Create bar chart
-    fig = px.bar(tag_peak_ccu_sum_df.head(10), x='Tag', y='Total Peak CCU',
-                 labels={'x': 'Tag', 'y': 'Total Peak CCU'}, 
-                 title=f"Total Peak CCU by Tag for Genre: {selected_genre}")
     fig = px.bar(tag_peak_ccu_sum_df.head(10), x='Tag', y='Total Peak CCU',
                  labels={'x': 'Tag', 'y': 'Total Peak CCU'}, 
                  title=f"Total Peak CCU by Tag for Genre: {selected_genre}")
@@ -361,8 +326,6 @@ def update_seasonal_trends(selected_genre):
 
 timeline_fig = timeline_visualization(df_original)
 peak_ccu_fig = peak_ccu_visualisation(df)
-genre_correlation_fig = genre_correlation_visualization(df_original)
-# genre_correlation_fig = peak_ccu_visualisation(df)
 genre_correlation_fig = genre_correlation_visualization(df_original)
 # genre_correlation_fig = peak_ccu_visualisation(df)
 price_sensitivity_fig = price_sensitivity_visualization_2(df)
