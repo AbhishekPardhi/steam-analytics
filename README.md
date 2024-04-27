@@ -12,9 +12,13 @@ The goal is to align the development and improvement of games with player prefer
 ## How to run the Webapp
 
 First, create an environment and install all of the required packages (for e.g. with conda)
-`$ conda create --name steam --file requirements.txt`
+```
+$ conda create --name steam --file requirements.txt
+```
 
 Then download the dataset `games.csv` from this [link](https://www.kaggle.com/datasets/fronkongames/steam-games-dataset) and put it inside the folder `data`
 
 Then run the python file app.py and wait for a few seconds for the webapp to load and show all of the visualizations
-`$ python app.py`
+```
+$ python app.py
+```
