@@ -331,6 +331,7 @@ genre_correlation_fig = genre_correlation_visualization(df_original)
 price_sensitivity_fig = price_sensitivity_visualization_2(df)
 
 app.layout = html.Div([
+    html.H1('Unraveling Game Market Dynamics: A Visual Approach'),
     html.Div([
         html.Div([
             html.H2('Price Sensitivity Visualization 1'),
@@ -398,7 +399,7 @@ app.layout = html.Div([
             dcc.Graph(id='wordcloud-graph')
         ], className='six columns'),
         html.Div([
-            html.H2("Game Review vs Playtime Analysis by Genre"),
+            html.H2("Game Review vs Playtime Visualization by Genre"),
             dcc.Dropdown(
                 id='genre-dropdown-7',
                 options=[{'label': genre, 'value': genre} for genre in genre_list],
